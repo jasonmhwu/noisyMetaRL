@@ -5,8 +5,8 @@ import random
 from scipy.stats import sem
 
 from stable_baselines import DQN, PPO2, A2C
-from my_functions.my_policies import CustomLSTMStaticActionPolicy, CustomLSTMPolicy, CustomLSTMNoisyActionPolicy
-from my_functions.my_tasks import TwoStepTask
+from policies.policies import CustomLSTMStaticActionPolicy, CustomLSTMNoisyActionPolicy
+from envs.TwoStepTask import TwoStepTask
 
 class Simulation:
     """A simulation contains a task, a model, and all relevant variables"""
@@ -35,6 +35,7 @@ class Simulation:
         policy_kwargs = {}
         name_params = model_name.split(sep = '_')
         modelType = 'A2C-LSTM'
+        print('parsing model names...')
         for substr in name_params:
             if 'LSTM' in substr:
                 policy_kwargs['n_lstm'] = int(re.findall(r'\d+', substr)[1])
@@ -56,12 +57,12 @@ class Simulation:
                     tensorboard_log='./A2C-customLSTM_tensorboard'), policy_kwargs
 
             if 'ActionNoise' in modelType:
-                return A2C(CustomLSTMActionNoisePolicy, self.env, verbose=1, policy_kwargs=policy_kwargs, \
+                return A2C(CustomLSTMNoisyActionPolicy, self.env, verbose=1, policy_kwargs=policy_kwargs, \
                     gamma = 0.9, vf_coef = 0.05, ent_coef = 0.05, n_steps = 20, \
                     tensorboard_log='./A2C-customLSTM_tensorboard'), policy_kwargs
    
             if 'A2C-LSTM' in modelType:
-                return A2C(CustomLSTMPolicy, self.env, verbose=1, policy_kwargs=policy_kwargs, \
+                return A2C(CustomLSTMNoisyActionPolicy, self.env, verbose=1, policy_kwargs=policy_kwargs, \
                     gamma = 0.9, vf_coef = 0.05, ent_coef = 0.05, n_steps = 20, \
                     tensorboard_log='./A2C-customLSTM_tensorboard'), policy_kwargs
 
@@ -116,6 +117,8 @@ class Rollouts:
         self.actions = np.zeros((NTestEpisodes, NTrials))
 
         self.states = np.zeros((NTestEpisodes, NTrials))
+        self.bestArm = np.zeros((NTestEpisodes, NTrials))
+        self.Switched = np.zeros((NTestEpisodes, NTrials))
         self.states_hidden = np.zeros((NTestEpisodes, NTrials, 2*N_LSTM))
         self.info = {}
 
