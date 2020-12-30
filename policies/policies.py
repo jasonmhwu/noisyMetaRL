@@ -1,23 +1,19 @@
 import tensorflow as tf
 import numpy as np
 from stable_baselines.common.tf_util import batch_to_seq, seq_to_batch
-from stable_baselines.common.tf_layers import conv, linear, conv_to_fc, lstm
-from stable_baselines import DQN, PPO2, A2C, ACKTR
-from stable_baselines.common.cmd_util import make_vec_env
-from stable_baselines.common.policies import LstmPolicy, RecurrentActorCriticPolicy
-
+from stable_baselines.common.tf_layers import linear, lstm
+from stable_baselines.common.policies import RecurrentActorCriticPolicy
 
 
 class CustomLSTMNoisyActionPolicy(RecurrentActorCriticPolicy):
     def __init__(self, sess, ob_space, ac_space, n_env, n_steps, n_batch, n_lstm=48, reuse=False, layers=None,
                  net_arch=['lstm', dict(vf=[], pi=[])], act_fun=tf.tanh, layer_norm=True, feature_extraction="mlp",
-                 action_noise = 0.01, **kwargs):
+                 action_noise=0.01, **kwargs):
         super().__init__(sess, ob_space, ac_space, n_env, n_steps, n_batch,
-                                         state_shape=(2 * n_lstm, ), reuse=reuse,
-                                         scale=(feature_extraction == "mlp"))
+                         state_shape=(2 * n_lstm, ), reuse=reuse,
+                         scale=(feature_extraction == "mlp"))
 
-        
-        #self._kwargs_check(feature_extraction, kwargs)
+        # TODO: self._kwargs_check(feature_extraction, kwargs)
         if net_arch is None:
             raise ValueError('for zero shared layers, net_arch needs to be [].\n')
         else:
@@ -92,7 +88,7 @@ class CustomLSTMNoisyActionPolicy(RecurrentActorCriticPolicy):
                 self._proba_distribution, self._policy, self.q_value = \
                     self.pdtype.proba_distribution_from_latent(latent_policy, latent_value)
         self._setup_init()
-        
+
     def step(self, obs, state=None, mask=None, deterministic=False):
         if deterministic:
             return self.sess.run([self.deterministic_action, self.value_flat, self.snew, self.neglogp],
@@ -106,9 +102,6 @@ class CustomLSTMNoisyActionPolicy(RecurrentActorCriticPolicy):
 
     def value(self, obs, state=None, mask=None):
         return self.sess.run(self.value_flat, {self.obs_ph: obs, self.states_ph: state, self.dones_ph: mask})
- 
-
-
 
 
 class CustomLSTMStaticActionPolicy(RecurrentActorCriticPolicy):
@@ -205,7 +198,7 @@ class CustomLSTMStaticActionPolicy(RecurrentActorCriticPolicy):
                 self._proba_distribution, self._policy, self.q_value = \
                     self.pdtype.proba_distribution_from_latent(latent_policy, latent_value)
         self._setup_init()
-        
+
     def step(self, obs, state=None, mask=None, deterministic=False):
         if deterministic:
             return self.sess.run([self.deterministic_action, self.value_flat, self.snew, self.neglogp],
