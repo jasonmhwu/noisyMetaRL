@@ -1,77 +1,93 @@
 import numpy as np
-import re
 import os
 import json
+import glob
+import re
+import pdb
+import pandas as pd
 
 from stable_baselines import A2C
 from stable_baselines.bench.monitor import Monitor
 from stable_baselines.common.cmd_util import make_vec_env
 
 from policies.policies import CustomLSTMNoisyActionPolicy, CustomLSTMStaticActionPolicy
+from envs.GuessBoundary import GuessBoundaryTask
+from envs.TwoStepTask import TwoStepTask
 
 
 class Simulation:
     """A simulation instance wraps a task, a model, and all relevant variables."""
 
-    def __init__(self, model_name, env, agent=None):
-        """Generate a simulation instance by parsing model_name and creating the corresponding agent"""
-        self.model_name = model_name  # TODO: if model is not trained with this name, raise an error
+    def __init__(self, model_path, load_params_file_idx=-1):
+        """Generate a simulation instance by loading the config.json file and re-generate env and agent.
 
-        # parse the model name to get trained time-steps and num_shared_layer_units
-        if model_name.find('LSTM') < 0:
-            raise ValueError("this isn't a LSTM model")
-        idx = model_name.find('train')
-        self.timesteps_trained = int(model_name[idx+5:])
+        :param model_path (str): path to a trained model.
+        :param load_params_file_idx (int): the parameter file "train[load_params_file_idx].zip" will be loaded.
+            If this file can't be found, the file with maximum training steps will be loaded
+        """
+        if not os.path.isdir(model_path):
+            print("model_path is not a valid directory path. Can't create simulation instance.")
+        if not os.path.isfile(os.path.join(model_path, 'config.json')):
+            print("config.json not found in model_path.")
+        self.model_path = model_path
+        with open(os.path.join(model_path, 'config.json'), 'r') as config_file:
+            self.config = json.load(config_file)
 
-        try:
-            self.env = env
-            self.num_envs = env.num_envs
-        except TypeError:
-            print('argument env must be provided.')
-
-        if agent is not None:
-            self.agent = agent
+        # create environment
+        env_args = self.config["env_args"]
+        self.num_envs = 1  # TODO: should I include this into config file?
+        if self.config["env_name"] == 'GuessBoundary':
+            self.env = GuessBoundaryTask(available_range=(env_args["min_action"], env_args["max_action"]),
+                                         obs_mode=env_args["obs_mode"])
+        elif self.config["env_name"] == 'TwoStepTask':
+            self.env = TwoStepTask(prob_stay_same_state=env_args["prob_stay_same_state"],
+                                   prob_reward=tuple(env_args["prob_reward"]),
+                                   prob_switch_reward=env_args["prob_switch_reward"],
+                                   num_trials=env_args["num_trials"])
         else:
-            self.agent, _ = self.parse_model_name(model_name)
-            self.agent.load_parameters('./' + model_name)
-        self.num_shared_layer_units = self.agent.policy_kwargs['num_shared_layer_units']
-        self.model_path = './' + model_name.split(sep='/')[0]
+            print('env_name in config.json file not recognized.')
+        self.env = make_vec_env(lambda: self.env, n_envs=1)  # must use vectorized environments for recurrent policies
 
-    def parse_model_name(self, model_name):
-        """Parse the input string and return a valid agent."""
-        policy_kwargs = {}
-        name_params = model_name.split(sep='_')
-        model_type = 'A2C-LSTM'
-        print('parsing model names...')
-        for substr in name_params:
-            if 'LSTM' in substr:
-                policy_kwargs['num_shared_layer_units'] = int(re.findall(r'\d+', substr)[1])
-                print('num_shared_layer_units: ', policy_kwargs['num_shared_layer_units'])
-            if 'ActionNoise' in substr:  # a model with action noise
-                nums = re.findall(r'\d+', substr)
-                policy_kwargs['action_noise'] = float(nums[0]) * pow(10, -1*int(nums[1]))
-                print('action_noise: ', policy_kwargs['action_noise'])
-                model_type = 'ActionNoise'
-            if 'Share' in substr:
-                policy_kwargs['shared_layer_size'] = int(re.findall(r'\d+', substr)[0])
-                print('shared_layer_size: ', policy_kwargs['shared_layer_size'])
-            if 'StaticAction' in substr:
-                model_type = 'StaticAction'
+        # create agent
+        agent_args = self.config["agent_args"]
+        policy_kwargs = self.config["policy_kwargs"]
+        self.num_shared_layer_units = policy_kwargs["n_lstm"]
+        if self.config["agent_name"] == 'A2C':
+            if self.config["agent_policy"] == "CustomLSTMNoisyActionPolicy":
+                self.agent = A2C(CustomLSTMNoisyActionPolicy, self.env,
+                                 verbose=1,
+                                 gamma=agent_args["gamma"],
+                                 vf_coef=agent_args["vf_coef"],
+                                 ent_coef=agent_args["ent_coef"],
+                                 n_steps=agent_args["n_steps"],
+                                 tensorboard_log='./A2C-customLSTM_tensorboard',
+                                 policy_kwargs=policy_kwargs)
+            elif self.config["agent_policy"] == "CustomLSTMStaticActionPolicy":
+                self.agent = A2C(CustomLSTMStaticActionPolicy, self.env,
+                                 verbose=1,
+                                 gamma=agent_args["gamma"],
+                                 vf_coef=agent_args["vf_coef"],
+                                 ent_coef=agent_args["ent_coef"],
+                                 n_steps=agent_args["n_steps"],
+                                 tensorboard_log='./A2C-customLSTM_tensorboard',
+                                 policy_kwargs=policy_kwargs)
+            else:
+                print('agent policy in config.json not recognized.')
+        else:
+            print('agent name in config.json not recognized.')
 
-            if 'StaticAction' in model_type:  # a model with separate hidden recurrent layer and a static policy network
-                return A2C(CustomLSTMStaticActionPolicy, self.env, verbose=1, policy_kwargs=policy_kwargs,
-                           gamma=0.9, vf_coef=0.05, ent_coef=0.05, n_steps=20,
-                           tensorboard_log='./A2C-customLSTM_tensorboard'), policy_kwargs
+        self.rollouts = None
 
-            if 'ActionNoise' in model_type:
-                return A2C(CustomLSTMNoisyActionPolicy, self.env, verbose=1, policy_kwargs=policy_kwargs,
-                           gamma=0.9, vf_coef=0.05, ent_coef=0.05, n_steps=20,
-                           tensorboard_log='./A2C-customLSTM_tensorboard'), policy_kwargs
-
-            if 'A2C-LSTM' in model_type:
-                return A2C(CustomLSTMNoisyActionPolicy, self.env, verbose=1, policy_kwargs=policy_kwargs,
-                           gamma=0.9, vf_coef=0.05, ent_coef=0.05, n_steps=20,
-                           tensorboard_log='./A2C-customLSTM_tensorboard'), policy_kwargs
+        # load the model parameters from directory
+        param_file = os.path.join(model_path, 'train{}.zip'.format(load_params_file_idx))
+        if os.path.isfile(param_file):
+            self.agent.load_parameters(param_file)
+        else:
+            print("invalid load_params_file_idx. Loading parameters from the latest save file.")
+            files = glob.glob(os.path.join(model_path, "train*.zip"))
+            num_last_trained = max([int(re.findall(r'\d+', file)[-1]) for file in files])
+            param_file = os.path.join(model_path, 'train{}.zip'.format(num_last_trained))
+            self.agent.load_parameters(param_file)
 
     def evaluate(self, num_test_episodes=20, num_trials=200, verbose=False):
         """Collect new trajectories with a trained model"""
@@ -94,8 +110,13 @@ class Simulation:
                 self.rollouts.actions[ctr, step] = action
                 self.rollouts.states[ctr, step] = obs[0][0]
                 self.rollouts.states_hidden[ctr, step, :] = hidden
-                self.rollouts.bestArm[ctr, step] = info[0]['bestArm']
-                self.rollouts.Switched[ctr, step] = info[0]['Switched']
+                if self.env.get_attr('name')[0] == "TwoStepTask":
+                    self.rollouts.bestArm[ctr, step] = info[0]['bestArm']
+                    self.rollouts.Switched[ctr, step] = info[0]['Switched']
+                elif self.env.get_attr('name')[0] == "GuessBoundary":
+                    self.rollouts.target[ctr, step] = info[0]['target']
+                else:
+                    print('environment name not recognized during evaluation.')
                 obs = obs_next
 
                 if np.all(done) & verbose:
@@ -107,10 +128,6 @@ class Simulation:
         if verbose:
             print('reward per episode is ', np.mean(self.rollouts.rewards, 1) * 2)
             print('average reward is ', np.mean(self.rollouts.rewards) * 2)
-            prob_reward = self.env.get_attr('prob_reward')[0]
-            prob_stay_same_state = self.env.get_attr('prob_stay_same_state')[0]
-            print('optimal expected reward is ',
-                  prob_stay_same_state*max(prob_reward) + (1-prob_stay_same_state)*min(prob_reward))
 
 
 class Rollouts:
@@ -132,8 +149,8 @@ class Rollouts:
         self.states = np.zeros((num_test_episodes, num_trials))
         self.bestArm = np.zeros((num_test_episodes, num_trials))
         self.Switched = np.zeros((num_test_episodes, num_trials))
+        self.target = np.zeros((num_test_episodes, num_trials))
         self.states_hidden = np.zeros((num_test_episodes, num_trials, 2*num_shared_layer_units))
-        self.info = {}
 
 
 def do_experiment(env, num_train_steps, policy_kwargs):

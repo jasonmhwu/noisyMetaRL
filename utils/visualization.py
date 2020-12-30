@@ -1,6 +1,26 @@
-from sklearn.decomposition import PCA
 import numpy as np
+from sklearn.decomposition import PCA
 from scipy.stats import sem
+
+from stable_baselines.bench.monitor import load_results
+
+
+def plot_training_progress(model_output_path):
+    """Retrieve the monitor.csv file and plot the training performance."""
+    try:
+        results = load_results(model_output_path)
+    except FileNotFoundError:
+        print('monitor.csv file is not found!')
+
+    results['l_moving_avg_100'] = results['l'].rolling(window=100).mean()
+    results['t_per_M'] = results['t'] / 1000
+
+    results.plot(x='t_per_M', y='l_moving_avg_100',
+                 title='Training Progress',
+                 xlabel='Million Steps',
+                 ylabel='Mean Episode Length'
+                 )
+    return results
 
 
 def visualize_hidden_units(ax, rollouts, num_stable_trials=10):
