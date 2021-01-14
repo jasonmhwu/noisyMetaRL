@@ -61,7 +61,8 @@ class Simulation:
                                  ent_coef=agent_args["ent_coef"],
                                  n_steps=agent_args["n_steps"],
                                  tensorboard_log='./A2C-customLSTM_tensorboard',
-                                 policy_kwargs=policy_kwargs)
+                                 policy_kwargs=policy_kwargs
+                                )
             elif self.config["agent_policy"] == "CustomLSTMStaticActionPolicy":
                 self.agent = A2C(CustomLSTMStaticActionPolicy, self.env,
                                  verbose=1,
@@ -92,12 +93,17 @@ class Simulation:
     def evaluate(self, num_test_episodes=20, num_trials=200, verbose=False):
         """Collect new trajectories with a trained model"""
         num_envs = self.num_envs
-        self.rollouts = Rollouts(num_test_episodes, num_trials, self.num_shared_layer_units)
+        self.rollouts = pd.DataFrame()
 
         for epi in range(num_test_episodes // num_envs):
             obs = self.env.reset()
             done = [False for _ in range(num_envs)]
             hidden = np.zeros((num_envs, 2*self.num_shared_layer_units))
+            rewards, actions, states, states_hidden = [], [], [], []
+            if self.env.get_attr('name')[0] == "TwoStepTask":
+                best_arm, switched = [], []
+            if self.env.get_attr('name')[0] == "GuessBoundary":
+                target = []
 
             for step in range(num_trials):
                 # for recurrent policies, we have to manually save and load hidden states
@@ -105,52 +111,46 @@ class Simulation:
                 action, hidden = self.agent.predict(obs, deterministic=False, mask=done, state=hidden)
                 obs_next, reward, done, info = self.env.step(action)
 
-                ctr = np.arange(num_envs) + epi * num_envs
-                self.rollouts.rewards[ctr, step] = reward
-                self.rollouts.actions[ctr, step] = action
-                self.rollouts.states[ctr, step] = obs[0][0]
-                self.rollouts.states_hidden[ctr, step, :] = hidden
+                rewards.append(reward[0])
+                actions.append(action[0])
+                states.append(obs[0])
+                states_hidden.append(hidden)
                 if self.env.get_attr('name')[0] == "TwoStepTask":
-                    self.rollouts.bestArm[ctr, step] = info[0]['bestArm']
-                    self.rollouts.Switched[ctr, step] = info[0]['Switched']
+                    best_arm.append(info[0]['bestArm'])
+                    switched.append(info[0]['Switched'])
                 elif self.env.get_attr('name')[0] == "GuessBoundary":
-                    self.rollouts.target[ctr, step] = info[0]['target']
+                    target.append(info[0]['target'])
                 else:
                     print('environment name not recognized during evaluation.')
                 obs = obs_next
 
-                if np.all(done) & verbose:
-                    # Note that the VecEnv resets automatically
-                    # when a done signal is encountered
-                    print("End of Episode")
+                # Note that the VecEnv resets automatically
+                # when a done signal is encountered
+                if np.all(done):
+                    break
 
-        # display some basic statistics
+            # arrange variables and append to rollouts
+            df_this_epi = pd.DataFrame(
+                {
+                    'episode': [epi] * len(rewards),
+                    'trial': np.arange(len(rewards)),
+                    'rewards': rewards,
+                    'states': states,
+                    'actions': actions,
+                    'states_hidden': states_hidden
+                }
+            )
+            if self.env.get_attr('name')[0] == "GuessBoundary":
+                df_this_epi['target'] = target
+            self.rollouts = self.rollouts.append(df_this_epi)
+
+        # store rollouts to pickle file
+        self.rollouts.to_pickle(os.path.join(self.model_path, 'rollouts.pkl'))
+
+        # print some basic statistics
         if verbose:
-            print('reward per episode is ', np.mean(self.rollouts.rewards, 1) * 2)
-            print('average reward is ', np.mean(self.rollouts.rewards) * 2)
-
-
-class Rollouts:
-    """
-    Rollout stores all relevant information in each trial.
-
-    parameters:
-        num_test_episodes: number of episodes evaluated during test time
-        num_trials: number of trials in each test episode
-        num_shared_layer_units: number of hidden units
-    """
-
-    def __init__(self, num_test_episodes, num_trials, num_shared_layer_units):
-        self.num_test_episodes = num_test_episodes
-        self.num_trials = num_trials
-        self.num_shared_layer_units = num_shared_layer_units
-        self.rewards = np.zeros((num_test_episodes, num_trials))
-        self.actions = np.zeros((num_test_episodes, num_trials))
-        self.states = np.zeros((num_test_episodes, num_trials))
-        self.bestArm = np.zeros((num_test_episodes, num_trials))
-        self.Switched = np.zeros((num_test_episodes, num_trials))
-        self.target = np.zeros((num_test_episodes, num_trials))
-        self.states_hidden = np.zeros((num_test_episodes, num_trials, 2*num_shared_layer_units))
+            print('average reward per episode is ', self.rollouts.groupby('episode')['rewards'].sum().mean())
+            print('average episode length is ', self.rollouts.groupby('episode').size().mean())
 
 
 def do_experiment(env, num_train_steps, policy_kwargs):
