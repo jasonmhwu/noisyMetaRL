@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from scipy.stats import sem
 
@@ -13,13 +14,24 @@ def plot_training_progress(model_output_path):
         print('monitor.csv file is not found!')
 
     results['l_moving_avg_100'] = results['l'].rolling(window=100).mean()
+    results['r_moving_avg_100'] = results['r'].rolling(window=100).mean()
     results['t_per_M'] = results['t'] / 1000
 
-    results.plot(x='t_per_M', y='l_moving_avg_100',
-                 title='Training Progress',
-                 xlabel='Million Steps',
-                 ylabel='Mean Episode Length'
-                 )
+    fig, axs = plt.subplots(1, 2)
+    results.plot(
+        ax=axs[0],
+        x='t_per_M', y='l_moving_avg_100',
+        title='Training Progress',
+        xlabel='Million Steps',
+        ylabel='Mean Episode Length'
+    )
+    results.plot(
+        ax=axs[1],
+        x='t_per_M', y='r_moving_avg_100',
+        title='Training Progress',
+        xlabel='Million Steps',
+        ylabel='Mean Reward'
+    )
     return results
 
 

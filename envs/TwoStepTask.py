@@ -34,7 +34,7 @@ class TwoStepTask(gym.Env):
         self.prevAct = 0  # now assumes that prevAct at t = 0 is LEFT
         self.prevR = 0
         self.t = 0
-        self.info = {'bestArm': np.argmax(self.prob_reward), 'Switched': False}
+        self.info = {'best_arm': np.argmax(self.prob_reward), 'switched': False}
         
     def step(self, action):
         """Move the environment forward given the input action."""
@@ -57,12 +57,12 @@ class TwoStepTask(gym.Env):
             self.prevR = reward
             if random.random() < self.prob_switch_reward:  # Switch the reward associated with each state
                 self.prob_reward = np.ones(len(self.prob_reward)) - self.prob_reward
-                self.info['bestArm'] = np.argmax(self.prob_reward)
+                self.info['best_arm'] = np.argmax(self.prob_reward)
                 return np.array([self.currState, self.prevAct, reward]), \
-                    reward, done, {'bestArm': np.argmax(self.prob_reward), 'Switched': True}
+                    reward, done, {'best_arm': np.argmax(self.prob_reward), 'switched': True}
             else:
                 return np.array([self.currState, self.prevAct, reward]), \
-                    reward, done, {'bestArm': np.argmax(self.prob_reward), 'Switched': False}
+                    reward, done, {'best_arm': np.argmax(self.prob_reward), 'switched': False}
         else:
             raise ValueError('invalid state index: should always reset the environment before starting')
             
@@ -71,7 +71,7 @@ class TwoStepTask(gym.Env):
         self.prevAct = 0
         self.prevR = 0
         self.t = 0
-        self.info = {'bestArm': np.argmax(self.prob_reward), 'Switched': False}
+        self.info = {'best_arm': np.argmax(self.prob_reward), 'switched': False}
         
         # returns the first observation
         return np.array([0, 0, 0])

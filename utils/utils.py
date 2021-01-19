@@ -13,6 +13,7 @@ from stable_baselines.common.cmd_util import make_vec_env
 from policies.policies import CustomLSTMNoisyActionPolicy, CustomLSTMStaticActionPolicy
 from envs.GuessBoundary import GuessBoundaryTask
 from envs.TwoStepTask import TwoStepTask
+from envs.Collins2018 import Collins2018Task
 
 
 class Simulation:
@@ -37,13 +38,23 @@ class Simulation:
         env_args = self.config["env_args"]
         self.num_envs = 1  # TODO: should I include this into config file?
         if self.config["env_name"] == 'GuessBoundary':
-            self.env = GuessBoundaryTask(available_range=(env_args["min_action"], env_args["max_action"]),
-                                         obs_mode=env_args["obs_mode"])
+            self.env = GuessBoundaryTask(
+                available_range=(env_args["min_action"], env_args["max_action"]),
+                obs_mode=env_args["obs_mode"]
+            )
         elif self.config["env_name"] == 'TwoStepTask':
-            self.env = TwoStepTask(prob_stay_same_state=env_args["prob_stay_same_state"],
-                                   prob_reward=tuple(env_args["prob_reward"]),
-                                   prob_switch_reward=env_args["prob_switch_reward"],
-                                   num_trials=env_args["num_trials"])
+            self.env = TwoStepTask(
+                prob_stay_same_state=env_args["prob_stay_same_state"],
+                prob_reward=tuple(env_args["prob_reward"]),
+                prob_switch_reward=env_args["prob_switch_reward"],
+                num_trials=env_args["num_trials"]
+            )
+        elif self.config["env_name"] == 'Collins2018':
+            self.env = Collins2018Task(
+                num_objects=env_args["num_objects"],
+                num_actions=env_args["num_actions"],
+                max_trial_num=env_args["max_trial_num"]
+            )
         else:
             print('env_name in config.json file not recognized.')
         self.env = make_vec_env(lambda: self.env, n_envs=1)  # must use vectorized environments for recurrent policies
@@ -54,24 +65,27 @@ class Simulation:
         self.num_shared_layer_units = policy_kwargs["n_lstm"]
         if self.config["agent_name"] == 'A2C':
             if self.config["agent_policy"] == "CustomLSTMNoisyActionPolicy":
-                self.agent = A2C(CustomLSTMNoisyActionPolicy, self.env,
-                                 verbose=1,
-                                 gamma=agent_args["gamma"],
-                                 vf_coef=agent_args["vf_coef"],
-                                 ent_coef=agent_args["ent_coef"],
-                                 n_steps=agent_args["n_steps"],
-                                 tensorboard_log='./A2C-customLSTM_tensorboard',
-                                 policy_kwargs=policy_kwargs
-                                )
+                self.agent = A2C(
+                    CustomLSTMNoisyActionPolicy, self.env,
+                    verbose=1,
+                    gamma=agent_args["gamma"],
+                    vf_coef=agent_args["vf_coef"],
+                    ent_coef=agent_args["ent_coef"],
+                    n_steps=agent_args["n_steps"],
+                    tensorboard_log='./A2C-customLSTM_tensorboard',
+                    policy_kwargs=policy_kwargs
+                )
             elif self.config["agent_policy"] == "CustomLSTMStaticActionPolicy":
-                self.agent = A2C(CustomLSTMStaticActionPolicy, self.env,
-                                 verbose=1,
-                                 gamma=agent_args["gamma"],
-                                 vf_coef=agent_args["vf_coef"],
-                                 ent_coef=agent_args["ent_coef"],
-                                 n_steps=agent_args["n_steps"],
-                                 tensorboard_log='./A2C-customLSTM_tensorboard',
-                                 policy_kwargs=policy_kwargs)
+                self.agent = A2C(
+                    CustomLSTMStaticActionPolicy, self.env,
+                    verbose=1,
+                    gamma=agent_args["gamma"],
+                    vf_coef=agent_args["vf_coef"],
+                    ent_coef=agent_args["ent_coef"],
+                    n_steps=agent_args["n_steps"],
+                    tensorboard_log='./A2C-customLSTM_tensorboard',
+                    policy_kwargs=policy_kwargs
+                )
             else:
                 print('agent policy in config.json not recognized.')
         else:
@@ -94,34 +108,31 @@ class Simulation:
         """Collect new trajectories with a trained model"""
         num_envs = self.num_envs
         self.rollouts = pd.DataFrame()
+        info_var_list = list(self.env.get_attr('info')[0].keys())
 
         for epi in range(num_test_episodes // num_envs):
             obs = self.env.reset()
             done = [False for _ in range(num_envs)]
             hidden = np.zeros((num_envs, 2*self.num_shared_layer_units))
-            rewards, actions, states, states_hidden = [], [], [], []
-            if self.env.get_attr('name')[0] == "TwoStepTask":
-                best_arm, switched = [], []
-            if self.env.get_attr('name')[0] == "GuessBoundary":
-                target = []
+            rewards, actions, states, states_hidden, observations = [], [], [], [], []
+
+            # create additional variables to store things in info
+            for info_var in info_var_list:
+                exec(f"{info_var} = []")
 
             for step in range(num_trials):
                 # for recurrent policies, we have to manually save and load hidden states
                 # mask can be used to reset both hidden states before the start of a new episode
-                action, hidden = self.agent.predict(obs, deterministic=False, mask=done, state=hidden)
+                action, hidden = self.agent.predict(obs, deterministic=True, mask=done, state=hidden)
                 obs_next, reward, done, info = self.env.step(action)
 
                 rewards.append(reward[0])
                 actions.append(action[0])
                 states.append(obs[0])
+                observations.append(obs[0][0])
                 states_hidden.append(hidden)
-                if self.env.get_attr('name')[0] == "TwoStepTask":
-                    best_arm.append(info[0]['bestArm'])
-                    switched.append(info[0]['Switched'])
-                elif self.env.get_attr('name')[0] == "GuessBoundary":
-                    target.append(info[0]['target'])
-                else:
-                    print('environment name not recognized during evaluation.')
+                for info_var in info_var_list:
+                    exec(f"{info_var}.append(info[0]['{info_var}'])")
                 obs = obs_next
 
                 # Note that the VecEnv resets automatically
@@ -136,12 +147,13 @@ class Simulation:
                     'trial': np.arange(len(rewards)),
                     'rewards': rewards,
                     'states': states,
+                    'observations': observations,
                     'actions': actions,
                     'states_hidden': states_hidden
                 }
             )
-            if self.env.get_attr('name')[0] == "GuessBoundary":
-                df_this_epi['target'] = target
+            for info_var in info_var_list:
+                exec(f"df_this_epi['{info_var}'] = {info_var}")
             self.rollouts = self.rollouts.append(df_this_epi)
 
         # store rollouts to pickle file
@@ -149,8 +161,14 @@ class Simulation:
 
         # print some basic statistics
         if verbose:
-            print('average reward per episode is ', self.rollouts.groupby('episode')['rewards'].sum().mean())
-            print('average episode length is ', self.rollouts.groupby('episode').size().mean())
+            df_tmp = self.rollouts.groupby('episode')
+            print(
+                'reward per episode is {:.2f} \u00B1 {:.2f}'.format(
+                    df_tmp.rewards.sum().mean(),
+                    df_tmp.rewards.sum().std()
+                )
+            )
+            print('average episode length is ', df_tmp.size().mean())
 
 
 def do_experiment(env, num_train_steps, policy_kwargs):
