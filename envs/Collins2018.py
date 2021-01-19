@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.random import randint, choice
+from typing import Tuple
 import pdb
 
 import gym
@@ -21,10 +22,10 @@ class Collins2018Task(gym.Env):
 
     metadata = {'render.modes': ['console']}
 
-    def __init__(self, num_objects=3, num_actions=4, max_trial_num=50):
+    def __init__(self, num_objects: Tuple[int, ...] = (3, 6), num_actions: int = 3, num_repeats: int = 13):
         """ Initializes task parameters.
 
-        :param num_objects (int): number of objects.
+        :param num_objects (tuple[int]): number of objects that can be specified.
         :param num_actions (int): number of available actions.
         """
 
@@ -33,10 +34,10 @@ class Collins2018Task(gym.Env):
         self.name = "Collins2018"
         self.num_objects = num_objects
         self.num_actions = num_actions
-        self.max_trial_num = max_trial_num
+        self.num_repeats = num_repeats
         self.action_space = Discrete(self.num_actions)
         self.observation_space = MultiDiscrete([
-            num_objects,  # observe one of the objects each trial
+            max(num_objects),  # observe one of the objects each trial
             num_actions,  # previous action
             2  # reward from last action
         ])
@@ -44,18 +45,22 @@ class Collins2018Task(gym.Env):
         self.config = {
             'num_objects': self.num_objects,
             'num_actions': self.num_actions,
-            'max_trial_num': self.max_trial_num
+            'num_repeats': self.num_repeats
         }
 
         # Define state variables:
-        self.target = randint(0, num_actions, size=num_objects)
-        self.curr_obs = randint(num_objects)
+        self.curr_num_objects = choice(num_objects)
+        self.target = randint(0, num_actions, size=self.curr_num_objects)
+        self.curr_obs = randint(self.curr_num_objects)
         self.prev_obs = 0
         self.prev_action = 0  # now assumes that prevAct at t = 0 is 0?
         self.reward = 0
         self.t = 0
         self.done = False
-        self.info = {'target': self.target}
+        self.info = {
+            'target': self.target,
+            'curr_num_objects': self.curr_num_objects
+        }
 
     def step(self, action):
         """Move the environment forward given the input action."""
@@ -63,23 +68,27 @@ class Collins2018Task(gym.Env):
         ans = self.target[self.curr_obs]
 
         self.reward = 1 if (action == ans) else 0
-        self.done = True if self.t >= self.max_trial_num else False
+        self.done = True if self.t >= self.num_repeats * self.curr_num_objects else False
         self.prev_action = action
         self.t += 1
         self.prev_obs = self.curr_obs
-        self.curr_obs = randint(self.num_objects)
+        self.curr_obs = randint(self.curr_num_objects)
 
         return np.array([self.curr_obs, self.prev_action, self.reward]), self.reward, self.done, self.info
 
     def reset(self):
         """Resets the environment variables."""
 
+        self.curr_num_objects = choice(self.num_objects)
         # random initialize target
-        self.target = randint(0, self.num_actions, size=self.num_objects)
-        self.info = {'target': self.target}
-
-        self.curr_obs = randint(self.num_objects)
+        self.target = randint(0, self.num_actions, size=self.curr_num_objects)
+        self.info = {
+            'target': self.target,
+            'curr_num_objects': self.curr_num_objects
+        }
+        self.curr_obs = randint(self.curr_num_objects)
         self.prev_obs = 0
+        # ideally, prev_action at t = 0 should not matter
         self.prev_action = randint(self.num_actions)
         self.reward = 0
         self.t = 0

@@ -51,9 +51,9 @@ class Simulation:
             )
         elif self.config["env_name"] == 'Collins2018':
             self.env = Collins2018Task(
-                num_objects=env_args["num_objects"],
+                num_objects=tuple(env_args["num_objects"]),
                 num_actions=env_args["num_actions"],
-                max_trial_num=env_args["max_trial_num"]
+                num_repeats=env_args["num_repeats"]
             )
         else:
             print('env_name in config.json file not recognized.')
