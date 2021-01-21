@@ -1,8 +1,13 @@
 import tensorflow as tf
 import numpy as np
+import tensorflow.python.util.deprecation as deprecation
+
 from stable_baselines.common.tf_util import batch_to_seq, seq_to_batch
 from stable_baselines.common.tf_layers import linear, lstm
 from stable_baselines.common.policies import RecurrentActorCriticPolicy
+
+deprecation._PRINT_DEPRECATION_WARNINGS = False
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 
 class CustomLSTMNoisyActionPolicy(RecurrentActorCriticPolicy):

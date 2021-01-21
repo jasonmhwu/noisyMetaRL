@@ -15,11 +15,16 @@ from envs.GuessBoundary import GuessBoundaryTask
 from envs.TwoStepTask import TwoStepTask
 from envs.Collins2018 import Collins2018Task
 
+import tensorflow as tf
+import tensorflow.python.util.deprecation as deprecation
+deprecation._PRINT_DEPRECATION_WARNINGS = False
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+
 
 class Simulation:
     """A simulation instance wraps a task, a model, and all relevant variables."""
 
-    def __init__(self, model_path, load_params_file_idx=-1):
+    def __init__(self, model_path, env=None, load_params_file_idx=-1):
         """Generate a simulation instance by loading the config.json file and re-generate env and agent.
 
         :param model_path (str): path to a trained model.
@@ -35,28 +40,31 @@ class Simulation:
             self.config = json.load(config_file)
 
         # create environment
-        env_args = self.config["env_args"]
         self.num_envs = 1  # TODO: should I include this into config file?
-        if self.config["env_name"] == 'GuessBoundary':
-            self.env = GuessBoundaryTask(
-                available_range=(env_args["min_action"], env_args["max_action"]),
-                obs_mode=env_args["obs_mode"]
-            )
-        elif self.config["env_name"] == 'TwoStepTask':
-            self.env = TwoStepTask(
-                prob_stay_same_state=env_args["prob_stay_same_state"],
-                prob_reward=tuple(env_args["prob_reward"]),
-                prob_switch_reward=env_args["prob_switch_reward"],
-                num_trials=env_args["num_trials"]
-            )
-        elif self.config["env_name"] == 'Collins2018':
-            self.env = Collins2018Task(
-                num_objects=tuple(env_args["num_objects"]),
-                num_actions=env_args["num_actions"],
-                num_repeats=env_args["num_repeats"]
-            )
+        if env:
+            self.env = env
         else:
-            print('env_name in config.json file not recognized.')
+            env_args = self.config["env_args"]
+            if self.config["env_name"] == 'GuessBoundary':
+                self.env = GuessBoundaryTask(
+                    available_range=(env_args["min_action"], env_args["max_action"]),
+                    obs_mode=env_args["obs_mode"]
+                )
+            elif self.config["env_name"] == 'TwoStepTask':
+                self.env = TwoStepTask(
+                    prob_stay_same_state=env_args["prob_stay_same_state"],
+                    prob_reward=tuple(env_args["prob_reward"]),
+                    prob_switch_reward=env_args["prob_switch_reward"],
+                    num_trials=env_args["num_trials"]
+                )
+            elif self.config["env_name"] == 'Collins2018':
+                self.env = Collins2018Task(
+                    num_objects=tuple(env_args["num_objects"]),
+                    num_actions=env_args["num_actions"],
+                    num_repeats=env_args["num_repeats"]
+                )
+            else:
+                print('env_name in config.json file not recognized.')
         self.env = make_vec_env(lambda: self.env, n_envs=1)  # must use vectorized environments for recurrent policies
 
         # create agent
@@ -116,9 +124,9 @@ class Simulation:
             hidden = np.zeros((num_envs, 2*self.num_shared_layer_units))
             rewards, actions, states, states_hidden, observations = [], [], [], [], []
 
-            # create additional variables to store things in info
-            for info_var in info_var_list:
-                exec(f"{info_var} = []")
+            info_record = []
+            for _ in range(len(info_var_list)):
+                info_record.append([])
 
             for step in range(num_trials):
                 # for recurrent policies, we have to manually save and load hidden states
@@ -131,8 +139,9 @@ class Simulation:
                 states.append(obs[0])
                 observations.append(obs[0][0])
                 states_hidden.append(hidden)
-                for info_var in info_var_list:
-                    exec(f"{info_var}.append(info[0]['{info_var}'])")
+                for i in range(len(info_var_list)):
+                    info_record[i].append(info[0][info_var_list[i]])
+
                 obs = obs_next
 
                 # Note that the VecEnv resets automatically
@@ -152,8 +161,10 @@ class Simulation:
                     'states_hidden': states_hidden
                 }
             )
-            for info_var in info_var_list:
-                exec(f"df_this_epi['{info_var}'] = {info_var}")
+
+            for i, info_var in enumerate(info_var_list):
+                df_this_epi[info_var] = info_record[i]
+
             self.rollouts = self.rollouts.append(df_this_epi)
 
         # store rollouts to pickle file
@@ -212,3 +223,28 @@ def do_experiment(env, num_train_steps, policy_kwargs):
         json.dump(exp_config, f)
 
     del env
+
+
+def behav2sim():
+    """ transforms Collins 2018 behavior dataset into simulation form. """
+
+    behav_data = pd.read_csv('/Users/mhwu/Desktop/rochester/RL_projects/noisyMetaRL/behavior/Collins2018_data.csv')
+    behav_data = behav_data[behav_data.phase == 0]
+    behav_data = behav_data[behav_data.cor >= 0]
+    behav_data = behav_data.rename(columns={
+        'learningblock': 'episode',
+        'ns': 'curr_num_objects',
+        'stim': 'observations',
+        'choice': 'actions',
+        'corchoice': 'answers',
+        'cor': 'rewards',
+        'iter': 'objects_iter'
+    })
+    behav_data = behav_data.drop(columns=['rt', 'pcor', 'delay', 'phase'])
+    behav_data.observations -= 1
+    behav_data.answers -= 1
+    behav_data.actions -= 1
+    behav_data.objects_iter -= 1
+    behav_data.episode -= 1
+
+    return behav_data

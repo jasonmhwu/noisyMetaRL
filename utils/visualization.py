@@ -168,3 +168,56 @@ def plot_stay_prob(ax, stay_prob):
     ax.set_title('A2C-LSTM Model')
     ax.set_ylim(0, 1)
     ax.legend()
+
+
+def plot_associative_learning_progress(ax, df):
+    """plot how the associative pairs are learned through repeated encounters, and it is affected by stimulus size.
+
+    :param ax: current figure axes
+    :param df: dataframe containing simulation
+    """
+
+    num_objects_list = sorted(df.curr_num_objects.unique())
+    legend_list = []
+    for idx in num_objects_list:
+        ax.plot(df[df.curr_num_objects == idx].groupby('objects_iter').rewards.mean())
+        legend_list.append(f'ns={idx}')
+    ax.set_xlabel('Stimulus iteration')
+    ax.set_ylabel('P(correct)')
+    ax.set_ylim([0.4, 1])
+    ax.legend(legend_list)
+
+
+def calc_exploration_and_retention(axs, df):
+    """calculate the degree of exploration and retention of the model's given simulation behavior
+
+    :param axs: current figure axes
+    :param df: dataframe containing simulation
+    """
+
+    if 'ID' in df.columns:
+        df_new_grouped = df.groupby(['ID', 'episode', 'observations'])
+    else:
+        df_new_grouped = df.groupby(['episode', 'observations'])
+    failed_ctr = np.zeros(len(df_new_grouped))  # at most num_actions-1 if optimal
+    retention_rate = np.zeros(len(df_new_grouped))
+
+    for idx, (name, group) in enumerate(df_new_grouped):
+        if group.rewards.iloc[0] == 1:
+            first_rewarded_idx = 0
+        else:
+            first_rewarded_idx = np.argmax(group.rewards.diff() == 1)
+        failed_ctr[idx] = first_rewarded_idx
+        if first_rewarded_idx == len(group) - 1:
+            retention_rate[idx] = 1
+        else:
+            retention_rate[idx] = group.rewards.iloc[first_rewarded_idx+1:].mean()
+
+    unique, counts = np.unique(failed_ctr, return_counts=True)
+    axs[0].bar(unique, counts)
+    axs[0].set_title('How fast to find answers?')
+    axs[0].set_xlabel('# of failed attempts')
+
+    axs[1].hist(retention_rate)
+    axs[1].set_title('Can you remember correct answers?')
+    axs[1].set_xlabel('proportion of rewarded trials')

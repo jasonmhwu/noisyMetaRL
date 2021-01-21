@@ -22,7 +22,12 @@ class Collins2018Task(gym.Env):
 
     metadata = {'render.modes': ['console']}
 
-    def __init__(self, num_objects: Tuple[int, ...] = (3, 6), num_actions: int = 3, num_repeats: int = 13):
+    def __init__(self,
+                 num_objects: Tuple[int, ...] = (3, 6),
+                 num_actions: int = 3,
+                 num_repeats: int = 13,
+                 max_observations: int = 6
+    ):
         """ Initializes task parameters.
 
         :param num_objects (tuple[int]): number of objects that can be specified.
@@ -36,8 +41,9 @@ class Collins2018Task(gym.Env):
         self.num_actions = num_actions
         self.num_repeats = num_repeats
         self.action_space = Discrete(self.num_actions)
+        max_observations = max(max_observations, max(num_objects))
         self.observation_space = MultiDiscrete([
-            max(num_objects),  # observe one of the objects each trial
+            max_observations,  # observe one of the objects each trial
             num_actions,  # previous action
             2  # reward from last action
         ])
@@ -59,7 +65,8 @@ class Collins2018Task(gym.Env):
         self.done = False
         self.info = {
             'target': self.target,
-            'curr_num_objects': self.curr_num_objects
+            'curr_num_objects': self.curr_num_objects,
+            'objects_iter': 0
         }
 
     def step(self, action):
@@ -68,8 +75,9 @@ class Collins2018Task(gym.Env):
         ans = self.target[self.curr_obs]
 
         self.reward = 1 if (action == ans) else 0
-        self.done = True if self.t >= self.num_repeats * self.curr_num_objects else False
+        self.done = True if self.t >= self.num_repeats*self.curr_num_objects - 1 else False
         self.prev_action = action
+        self.info['objects_iter'] = self.t // self.curr_num_objects
         self.t += 1
         self.prev_obs = self.curr_obs
         self.curr_obs = randint(self.curr_num_objects)
@@ -84,7 +92,8 @@ class Collins2018Task(gym.Env):
         self.target = randint(0, self.num_actions, size=self.curr_num_objects)
         self.info = {
             'target': self.target,
-            'curr_num_objects': self.curr_num_objects
+            'curr_num_objects': self.curr_num_objects,
+            'objects_iter': 0
         }
         self.curr_obs = randint(self.curr_num_objects)
         self.prev_obs = 0
