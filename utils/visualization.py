@@ -17,16 +17,9 @@ def plot_training_progress(model_output_path):
     results['r_moving_avg_100'] = results['r'].rolling(window=100).mean()
     results['t_per_M'] = results['t'] / 1000
 
-    fig, axs = plt.subplots(1, 2)
+    fig, axs = plt.subplots()
     results.plot(
-        ax=axs[0],
-        x='t_per_M', y='l_moving_avg_100',
-        title='Training Progress',
-        xlabel='Million Steps',
-        ylabel='Mean Episode Length'
-    )
-    results.plot(
-        ax=axs[1],
+        ax=axs,
         x='t_per_M', y='r_moving_avg_100',
         title='Training Progress',
         xlabel='Million Steps',
@@ -215,9 +208,7 @@ def calc_exploration_and_retention(axs, df):
 
     unique, counts = np.unique(failed_ctr, return_counts=True)
     axs[0].bar(unique, counts)
-    axs[0].set_title('How fast to find answers?')
     axs[0].set_xlabel('# of failed attempts')
 
     axs[1].hist(retention_rate)
-    axs[1].set_title('Can you remember correct answers?')
     axs[1].set_xlabel('proportion of rewarded trials')

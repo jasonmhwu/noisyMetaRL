@@ -179,7 +179,7 @@ class Simulation:
                     df_tmp.rewards.sum().std()
                 )
             )
-            print('average episode length is ', df_tmp.size().mean())
+            print('average episode length is {:.2f}'.format(df_tmp.size().mean()))
 
 
 def do_experiment(env, num_train_steps, policy_kwargs):
@@ -206,7 +206,7 @@ def do_experiment(env, num_train_steps, policy_kwargs):
     model = A2C(CustomLSTMNoisyActionPolicy, env_wrapped, verbose=1, policy_kwargs=policy_kwargs,
                 gamma=0.9, vf_coef=0.05, ent_coef=0.05, n_steps=20,
                 tensorboard_log=os.path.join(model_output_path, 'tensorboard'))
-    save_step = 25000
+    save_step = 1_000_000
     for step in range(num_train_steps // save_step):
         model.learn(save_step, log_interval=1000, reset_num_timesteps=False)
         model.save(model_output_path + '/train' + str(save_step*(step+1)))
