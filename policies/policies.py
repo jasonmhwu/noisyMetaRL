@@ -114,11 +114,10 @@ class CustomLSTMStaticActionPolicy(RecurrentActorCriticPolicy):
                  net_arch=['lstm', dict(vf=[], pi=[])], act_fun=tf.tanh, layer_norm=True, feature_extraction="mlp",
                  shared_layer_size=10, **kwargs):
         super().__init__(sess, ob_space, ac_space, n_env, n_steps, n_batch,
-                                         state_shape=(2 * n_lstm, ), reuse=reuse,
-                                         scale=(feature_extraction == "mlp"))
+                         state_shape=(2 * n_lstm, ), reuse=reuse,
+                         scale=(feature_extraction == "mlp"))
 
-        
-        #self._kwargs_check(feature_extraction, kwargs)
+        # self._kwargs_check(feature_extraction, kwargs)
         if net_arch is None:
             raise ValueError('for zero shared layers, net_arch needs to be [].\n')
         else:
@@ -170,8 +169,7 @@ class CustomLSTMStaticActionPolicy(RecurrentActorCriticPolicy):
                 else:
                     input_hidden = [tf.concat(axis=1, values=[v, hidden]) for v in input_sequence]
                     input_hidden = seq_to_batch(input_hidden)
-                
-                
+
                 # policy- and value-network shares one small linear layer
                 input_hidden = act_fun(linear(input_hidden, "shared_fc{}".format(idx), 
                                               shared_layer_size, init_scale=np.sqrt(2))) 
