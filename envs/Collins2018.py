@@ -1,5 +1,5 @@
 import numpy as np
-from numpy.random import randint, choice
+from numpy.random import randint, choice, permutation
 from typing import Tuple
 import pdb
 
@@ -26,8 +26,9 @@ class Collins2018Task(gym.Env):
                  num_objects: Tuple[int, ...] = (3, 6),
                  num_actions: int = 3,
                  num_repeats: int = 13,
-                 max_observations: int = 6
-    ):
+                 max_observations: int = 6,
+                 mode: str = 'random'
+                 ):
         """ Initializes task parameters.
 
         :param num_objects (tuple[int]): number of objects that can be specified.
@@ -40,13 +41,18 @@ class Collins2018Task(gym.Env):
         self.num_objects = num_objects
         self.num_actions = num_actions
         self.num_repeats = num_repeats
-        self.action_space = Discrete(self.num_actions)
+        assert mode in ['random', 'permutation']
+        self.mode = mode
         max_observations = max(max_observations, max(num_objects))
+        if self.mode == 'permutation':
+            assert self.num_actions >= max_observations
+
         self.observation_space = MultiDiscrete([
             max_observations,  # observe one of the objects each trial
             num_actions,  # previous action
             2  # reward from last action
         ])
+        self.action_space = Discrete(self.num_actions)
 
         self.config = {
             'num_objects': self.num_objects,
@@ -84,12 +90,16 @@ class Collins2018Task(gym.Env):
 
         return np.array([self.curr_obs, self.prev_action, self.reward]), self.reward, self.done, self.info
 
-    def reset(self):
+    def reset(self, *args):
         """Resets the environment variables."""
-
         self.curr_num_objects = choice(self.num_objects)
         # random initialize target
-        self.target = randint(0, self.num_actions, size=self.curr_num_objects)
+        if self.mode == 'random':
+            self.target = randint(0, self.num_actions, size=self.curr_num_objects)
+        elif self.mode == 'permutation':
+            self.target = permutation(self.curr_num_objects)
+        else:
+            print('mode unrecognized.')
         self.info = {
             'target': self.target,
             'curr_num_objects': self.curr_num_objects,
@@ -121,5 +131,3 @@ class Collins2018Task(gym.Env):
 
     def close(self):
         pass
-
-# TODO: allow working with multiple environments at the same time
